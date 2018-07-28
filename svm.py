@@ -14,6 +14,8 @@ from sklearn.datasets import make_moons
 from sklearn.datasets import make_circles
 from sklearn.preprocessing import StandardScaler
 
+epsilon = 1e-8
+
 class self(object):
     """This implements linear self and RBF-self.
     Parameters
@@ -53,7 +55,7 @@ class self(object):
         elif self.kernel_opt == 'rbf': #高斯径向基函数 radial basis function
             for i in range(numSamples):
                 diff = matrix_x[i, :] - sample_x
-                kernelValue[i] = np.exp(diff * diff.T / (-2.0*sigma**2)) 
+                kernelValue[i] = np.exp((np.linalg.norm(diff)**2) / (-2.0*sigma**2)) 
         else:
             raise NameError("It must be one of 'linear', 'rbf'.")
         return kernelValue
@@ -74,7 +76,7 @@ class self(object):
         separa_hyper_func = np.zeros((numTestSamples, 1))
         for i in range(numTestSamples): #<统计学习方法> P133
             kernel_fuc = self.kernelValue(self.X, test_x[i,:])
-            separa_hyper_func[i] = kernel_fuc.T * np.multipy(self.alpha, self.label) + self.b 
+            separa_hyper_func[i] = np.dot(kernel_fuc.T, np.multiply(self.alpha, self.Y)) + self.b 
         return separa_hyper_func
     
     def calcError(self, i):
@@ -84,12 +86,12 @@ class self(object):
     # update the error cache for alpha k after optimize alpha k  
     def updateError(self, k):  
         error = self.calcError(k)  
-        self.errorCache[alpha_k] = [1, error]  
+        self.errorCache[k] = [1, error]  
 
     # select alpha j which has the biggest step  
     def selectAlpha_j(self, alpha_i, error_i):  
         self.errorCache[alpha_i] = [1, error_i] # mark as valid(has been optimized)  
-        candidateAlphaList = np.nonzero(self.errorCache[:, 0].A)[0] # mat.A return array  
+        candidateAlphaList = np.nonzero(self.errorCache[:, 0])[0] # mat.A return array  
         maxStep = 0; alpha_j = 0; error_j = 0  
     
         # find the alpha with max iterative step  
@@ -97,7 +99,7 @@ class self(object):
             for alpha_k in candidateAlphaList:  
                 if alpha_k == alpha_i:   
                     continue  
-                error_k = calcError(self, alpha_k)  
+                error_k = self.calcError(alpha_k)  
                 if abs(error_k - error_i) > maxStep:  
                     maxStep = abs(error_k - error_i)  
                     alpha_j = alpha_k  
@@ -106,8 +108,8 @@ class self(object):
         else:             
             alpha_j = alpha_i  
             while alpha_j == alpha_i:  
-                alpha_j = int(np.random.uniform(0, self.numSamples))  
-            error_j = calcError(self, alpha_j)  
+                alpha_j = int(np.random.uniform(0, self.N))  
+            error_j = self.calcError(alpha_j)  
         
         return alpha_j, error_j  
 
@@ -129,7 +131,7 @@ class self(object):
         if (self.Y[alpha_i] * error_i < -self.tol) and (self.alpha[alpha_i] < self.C) or (self.Y[alpha_i] * error_i > self.tol) and (self.alpha[alpha_i] > 0):  
     
             # step 1: select alpha j  
-            alpha_j, error_j = selectAlpha_j(alpha_i, error_i)   #随机选取aj，并返回其E值
+            alpha_j, error_j = self.selectAlpha_j(alpha_i, error_i)   #随机选取aj，并返回其E值
             alpha_i_old = self.alpha[alpha_i].copy()  
             alpha_j_old = self.alpha[alpha_j].copy()  
     
@@ -163,7 +165,7 @@ class self(object):
     
             # step 6: if alpha j not moving enough, just return   ???     
             if abs(alpha_j_old - self.alpha[alpha_j]) < 0.00001:  
-                updateError(self, alpha_j)  
+                self.updateError(alpha_j)  
                 return 0  
     
             # step 7: update alpha i after optimizing aipha j  
@@ -182,13 +184,14 @@ class self(object):
                 self.b = (b1 + b2) / 2.0  
     
             # step 9: update error cache for alpha i, j after optimize alpha i, j and b  
-            updateError(self, alpha_j)  
-            updateError(self, alpha_i)  
+            self.updateError(alpha_j)  
+            self.updateError(alpha_i)  
     
             return 1  
         else:  
             return 0  
-        
+    
+
     
     def fit(self, X, Y):
         """Fit the self model according to the given training data.
@@ -202,9 +205,11 @@ class self(object):
         Y : array-like, shape = [n_samples]
             Target values (integers in classification)
         """
-        self.N = X.shape[0]  #训练样本数
-        self.alpha = np.zeros(self.N) #对偶问题的最优解
-        self.K = np.zeros((self.N, self.N))
+        self.X = X
+        self.Y = Y
+        self.N = self.X.shape[0]  #训练样本数
+        self.alpha = np.zeros((self.N, 1)) #对偶问题的最优解
+        self.K = np.mat(np.zeros((self.N, self.N)))
         for i in range(self.N):
             self.K[:, i] = self.kernelValue(X, X[i, :])
         
@@ -225,8 +230,8 @@ class self(object):
             #update alpha over all training examples
             if entireSet:
                 for i in range(self.N):
-                    alphaPairsChanged += optimize_a(i)
-                print('Iter:%d entire set, alpha pairs changed:%d' % iterCount, alphaPairsChanged)
+                    alphaPairsChanged += self.optimize_a(i)
+                print('Iter:{} entire set, alpha pairs changed:{}'.format(iterCount, alphaPairsChanged))
                 iterCount += 1
             
             # update alpha over examples where alpha is not 0 & not C (not on boundary)  
@@ -236,8 +241,8 @@ class self(object):
             # 直到所有非边界变量都满足KKT条件（self-consistent） 
             else:  
                 for j in np.where((self.alpha != 0) & (self.alpha != self.C))[0]: 
-                    alphaPairsChanged += optimize_a(i)  
-                print '---iter:%d non boundary, alpha pairs changed:%d' % (iterCount, alphaPairsChanged)  
+                    alphaPairsChanged += self.optimize_a(i)  
+                print('---iter:{} non boundary, alpha pairs changed:{}'.format(iterCount, alphaPairsChanged))  
                 iterCount += 1  
     
             # alternate loop over all examples and non-boundary examples  
@@ -249,36 +254,52 @@ class self(object):
 
     def classification_decision_func(self, test_x):
         return np.sign(self.separation_hyperplane_func(test_x))
+
+    # testing svm model 
+    def testSVM(self, test_x, test_y):  
+        numTestSamples = test_x.shape[0]  
+        supportVectorsIndex = np.nonzero(self.alpha > 0)[0]  
+        supportVectors      = self.X[supportVectorsIndex]  
+        supportVectorLabels = self.Y[supportVectorsIndex]  
+        supportVectorAlphas = self.alpha[supportVectorsIndex]  
+        matchCount = 0  
+        for i in xrange(numTestSamples):  
+            kernelValue = self.kernelValue(supportVectors, test_x[i, :])  
+            predict =  np.dot(kernelValue.T, np.multiply(supportVectorLabels, supportVectorAlphas)) + self.b  
+            if np.sign(predict) == np.sign(test_y[i]):  
+                matchCount += 1  
+        accuracy = float(matchCount) / numTestSamples  
+        return accuracy  
         
 
-def plot_decision_boundary(model, resolution=100, colors=('b', 'k', 'r'), figsize=(14,6)):
-    plt.figure(figsize=figsize)
-    xrange = np.linspace(model.X[:,0].min(), model.X[:,0].max(), resolution)
-    yrange = np.linspace(model.X[:,1].min(), model.X[:,1].max(), resolution)
-    grid = [[model.decision_function(np.array([xr, yr])) for yr in yrange] for xr in xrange]
-    grid = np.array(grid).reshape(len(xrange), len(yrange))
-    # 左边
-    plt.subplot(121)
-    c_1_i = model.Y == -1
-    plt.scatter(model.X[:,0][c_1_i], model.X[:,1][c_1_i], c='blueviolet', marker='.', alpha=0.8, s=20)
-    c_2_i = np.logical_not(c_1_i)
-    plt.scatter(model.X[:,0][c_2_i], model.X[:,1][c_2_i], c='teal', marker='.', alpha=0.8, s=20)
-    plt.contour(xrange, yrange, grid.T, (0,), linewidths=(1,),
-               linestyles=('-',), colors=colors[1])
-    #右边
-    plt.subplot(122)
-    plt.contour(xrange, yrange, grid.T, (-1, 0, 1), linewidths=(1, 1, 1),
-               linestyles=('--', '-', '--'), colors=colors)
-    c_1_i = model.Y == -1
-    plt.scatter(model.X[:,0][c_1_i], model.X[:,1][c_1_i], c='blueviolet', marker='.', alpha=0.6, s=20)
-    c_2_i = np.logical_not(c_1_i)
-    plt.scatter(model.X[:,0][c_2_i], model.X[:,1][c_2_i], c='teal', marker='.', alpha=0.6, s=20)
-    mask1 = (model.alpha > epsilon) & (model.Y == -1)
-    mask2 = (model.alpha > epsilon) & (model.Y == 1)
-    plt.scatter(model.X[:,0][mask1], model.X[:,1][mask1],
-               c='blueviolet', marker='v', alpha=1, s=20)
-    plt.scatter(model.X[:,0][mask2], model.X[:,1][mask2],
-               c='teal', marker='v', alpha=1, s=20)
+    # show your trained svm model only available with 2-D data  
+    def showSVM(self, resolution=100, colors=('b', 'k', 'r')):  
+        if self.X.shape[1] != 2:  
+            print "Sorry! I can not draw because the dimension of your data is not 2!"  
+            return 1  
+    
+        # draw all samples  
+        for i in range(self.N):  
+            if self.Y[i] == -1:  
+                plt.plot(self.X[i, 0], self.X[i, 1], 'or')  
+            elif self.Y[i] == 1:  
+                plt.plot(self.X[i, 0], self.X[i, 1], 'ob')  
+    
+        # mark support vectors  
+        supportVectorsIndex = np.nonzero(self.alpha > 0)[0]  
+        for i in supportVectorsIndex:  
+            plt.plot(self.X[i, 0], self.X[i, 1], 'oy')  
+        
+        # draw the classify line  
+        x_range = np.linspace(self.X[:,0].min(), self.X[:,0].max(), resolution)
+        y_range = np.linspace(self.X[:,1].min(), self.X[:,1].max(), resolution)
+        grid = [[self.separation_hyperplane_func(np.array([[xr, yr]])) for yr in y_range] for xr in x_range]
+        grid = np.array(grid).reshape(len(x_range), len(y_range))
+        
+        plt.contour(x_range, y_range, grid.T, (0,), linewidths=(1,),
+                linestyles=('-',), colors=colors[1])
+        plt.show()  
+
 
 
 if __name__ == "__main__":
@@ -291,8 +312,19 @@ if __name__ == "__main__":
     X = scaler.fit_transform(X)
     Y[Y == 0] = -1
 
-    svm = self(C = 1)
-    svm.fit(X, Y)
+    train_x = X[:80, :]
+    train_y = Y[:80, np.newaxis]
+    test_x = X[80:101, :]
+    test_y = Y[80:101, np.newaxis]
 
-    plot_decision_boundary(svm)
+    print("Step 2: Training...")
+    svm = self(C = 1)
+    svm.fit(train_x, train_y)
+
+    print("Step 3: Testing...")
+    accuracy = svm.testSVM(test_x, test_y)
+
+    print("Step 4: Showing result...")
+    print("The classify accuracy is:{}".format(accuracy * 100))
+    svm.showSVM()
 

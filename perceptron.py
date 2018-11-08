@@ -1,6 +1,6 @@
 #--coding:utf-8
 #################################################  
-# NaiveBayes: Perceptron
+# Perceptron: Perceptron
 # Author : Li Xiang  
 # Date   : 2018-11-08
 # Github : https://github.com/complicatedlee 
